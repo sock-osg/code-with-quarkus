@@ -1,5 +1,6 @@
 package com.oz.udemy.quarkus.customer.entity;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonManagedReference;
 import jakarta.persistence.*;
 import lombok.Data;
@@ -16,7 +17,7 @@ public class Product {
     private Long id;
     @ManyToOne
     @JoinColumn(name = "customer", referencedColumnName = "id")
-    @JsonManagedReference
+    @JsonBackReference
     private Customer customer;
     @Column
     private Long product;
