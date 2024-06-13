@@ -1,6 +1,11 @@
 package com.oz.udemy.quarkus.customer.repository;
 
+import com.blazebit.persistence.CriteriaBuilder;
+import com.blazebit.persistence.CriteriaBuilderFactory;
+import com.blazebit.persistence.view.EntityViewManager;
+import com.blazebit.persistence.view.EntityViewSetting;
 import com.oz.udemy.quarkus.customer.entity.Customer;
+import com.oz.udemy.quarkus.customer.entity.CustomerView;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -12,16 +17,23 @@ import java.util.List;
 public class CustomerRepository {
 
   private final EntityManager entityManager;
+  private final CriteriaBuilderFactory criteriaBuilderFactory;
+  private final EntityViewManager entityViewManager;
 
   @Inject
   public CustomerRepository(
-      final EntityManager entityManager
+      final EntityManager entityManager,
+      final CriteriaBuilderFactory criteriaBuilderFactory,
+      final EntityViewManager entityViewManager
   ) {
     this.entityManager = entityManager;
+    this.criteriaBuilderFactory = criteriaBuilderFactory;
+    this.entityViewManager = entityViewManager;
   }
 
-  public List<Customer> getCustomers() {
-    return this.entityManager.createQuery("from Customer", Customer.class).getResultList();
+  public List<CustomerView> getCustomers() {
+    CriteriaBuilder<Customer> criteriaBuilder = this.criteriaBuilderFactory.create(this.entityManager, Customer.class);
+    return this.entityViewManager.applySetting(EntityViewSetting.create(CustomerView.class), criteriaBuilder).getResultList();
   }
 
   @Transactional

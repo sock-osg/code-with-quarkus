@@ -3,6 +3,7 @@ package com.oz.udemy.quarkus.customer;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oz.udemy.quarkus.customer.entity.Customer;
+import com.oz.udemy.quarkus.customer.entity.CustomerView;
 import com.oz.udemy.quarkus.customer.entity.Product;
 import com.oz.udemy.quarkus.customer.repository.CustomerRepository;
 import io.smallrye.common.annotation.Blocking;
@@ -79,7 +80,7 @@ public class CustomerApi {
   }
 
   @GET
-  public List<Customer> getAll() {
+  public List<CustomerView> getAll() {
     return this.customerRepository.getCustomers();
   }
 

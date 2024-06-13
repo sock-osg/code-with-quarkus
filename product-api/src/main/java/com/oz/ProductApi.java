@@ -31,25 +31,25 @@ public class ProductApi {
 
   @GET
   public List<Product> getAll() {
-    return this.productRepository.getProducts();
+    return this.productRepository.findAll();
   }
 
   @GET
   @Path("/{id}")
   public Product getById(@PathParam("id") Long productId) {
-    return this.productRepository.getProductById(productId);
+    return this.productRepository.findById(productId).get();
   }
 
   @POST
   public Response create(Product product) {
-    this.productRepository.createProduct(product);
+    this.productRepository.save(product);
 
     return Response.created(URI.create(product.getId().toString())).build();
   }
 
   @PUT
   public Response update(Product product) {
-    this.productRepository.updateProduct(product);
+    this.productRepository.save(product);
 
     return Response.noContent().build();
   }
@@ -57,7 +57,7 @@ public class ProductApi {
   @DELETE
   @Path("/{id}")
   public Response delete(@PathParam("id") Long productId) {
-    this.productRepository.deleteProduct(productId);
+    this.productRepository.delete(this.productRepository.findById(productId).get());
 
     return Response.noContent().build();
   }
