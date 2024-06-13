@@ -4,13 +4,12 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oz.udemy.quarkus.customer.entity.Customer;
 import com.oz.udemy.quarkus.customer.entity.Product;
-import com.oz.udemy.quarkus.customer.repository.CustomerRepository;
-import io.smallrye.common.annotation.Blocking;
+import io.smallrye.mutiny.Multi;
 import io.smallrye.mutiny.Uni;
-import io.vertx.core.json.JsonArray;
 import io.vertx.ext.web.client.WebClientOptions;
 import io.vertx.mutiny.core.Vertx;
 import io.vertx.mutiny.ext.web.client.WebClient;
+import io.vertx.mutiny.pgclient.PgPool;
 import jakarta.annotation.PostConstruct;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -38,15 +37,15 @@ public class CustomerApi {
   private ObjectMapper objectMapper;
 
   private final Vertx vertx;
-  private final CustomerRepository customerRepository;
+  private final PgPool client;
 
   @Inject
   public CustomerApi(
       final Vertx vertx,
-      final CustomerRepository customerRepository
+      final PgPool client
   ) {
     this.vertx = vertx;
-    this.customerRepository = customerRepository;
+    this.client = client;
   }
 
   @PostConstruct
@@ -57,43 +56,38 @@ public class CustomerApi {
     this.objectMapper = new ObjectMapper();
   }
 
-  private Uni<Customer> getCustomerRx(Long id) {
-    return Uni.createFrom().item(this.customerRepository.getCustomerById(id));
-  }
-
   private Uni<List<Product>> getAllProductsRx() {
     return this.webClient.get("/product").send()
-        .onFailure().invoke(error -> log.error("Error getting products", error))
-        .onItem().transform(response ->
-          response.bodyAsJsonArray().stream().map(rawProduct -> {
-            try {
-              return this.objectMapper.readValue(rawProduct.toString(), Product.class);
-            } catch (JsonProcessingException jsonProcExc) {
-              log.error("Error casting current product", jsonProcExc);
-              return null;
-            }
-          })
-              .filter(Objects::nonNull)
-              .toList()
-        );
+      .onFailure().invoke(error -> log.error("Error getting products", error))
+      .onItem().transform(response ->
+        response.bodyAsJsonArray().stream().map(rawProduct -> {
+          try {
+            return this.objectMapper.readValue(rawProduct.toString(), Product.class);
+          } catch (JsonProcessingException jsonProcExc) {
+            log.error("Error casting current product", jsonProcExc);
+            return null;
+          }
+        })
+        .filter(Objects::nonNull)
+        .toList()
+      );
   }
 
   @GET
-  public List<Customer> getAll() {
-    return this.customerRepository.getCustomers();
+  public Multi<Customer> getAll() {
+    return Customer.findAll(this.client);
   }
 
   @GET
   @Path("/{id}")
-  public Customer getById(@PathParam("id") Long customerId) {
-    return this.customerRepository.getCustomerById(customerId);
+  public Uni<Customer> getById(@PathParam("id") Long customerId) {
+    return Customer.findById(this.client, customerId);
   }
 
   @GET
   @Path("/{id}/product")
-  @Blocking
   public Uni<Customer> getProductsById(@PathParam("id") Long customerId) {
-    return Uni.combine().all().unis(this.getCustomerRx(customerId), this.getAllProductsRx())
+    return Uni.combine().all().unis(Customer.findById(this.client, customerId), this.getAllProductsRx())
         .with((customer, fullProducts) -> {
           customer.getProducts().forEach(product -> fullProducts.stream().filter(fullProduct -> product.getId().equals(fullProduct.getId())).findFirst()
               .ifPresent(productFound -> {
@@ -106,24 +100,18 @@ public class CustomerApi {
   }
 
   @POST
-  public Response create(Customer product) {
-    this.customerRepository.createCustomer(product);
-
-    return Response.status(Response.Status.CREATED).build();
+  public Uni<Response> create(Customer customer) {
+    return customer.save(this.client).onItem().transform(id -> Response.status(Response.Status.CREATED).build());
   }
 
   @PUT
-  public Response update(Customer customer) {
-    this.customerRepository.updateProduct(customer);
-
-    return Response.noContent().build();
+  public Uni<Response> update(Customer customer) {
+    return customer.save(this.client).onItem().transform(id -> Response.noContent().build());
   }
 
   @DELETE
   @Path("/{id}")
-  public Response delete(@PathParam("id") Long customerId) {
-    this.customerRepository.deleteCustomer(customerId);
-
-    return Response.noContent().build();
+  public Uni<Response> delete(@PathParam("id") Long customerId) {
+    return Customer.delete(this.client, customerId).onItem().transform(id -> Response.noContent().build());
   }
 }
