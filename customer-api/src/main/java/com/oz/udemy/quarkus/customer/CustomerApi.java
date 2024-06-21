@@ -4,12 +4,12 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.oz.udemy.quarkus.customer.entity.Customer;
 import com.oz.udemy.quarkus.customer.entity.Product;
-import io.smallrye.mutiny.Multi;
+import io.quarkus.hibernate.reactive.panache.Panache;
+import io.quarkus.panache.common.Sort;
 import io.smallrye.mutiny.Uni;
 import io.vertx.ext.web.client.WebClientOptions;
 import io.vertx.mutiny.core.Vertx;
 import io.vertx.mutiny.ext.web.client.WebClient;
-import io.vertx.mutiny.pgclient.PgPool;
 import jakarta.annotation.PostConstruct;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
@@ -23,6 +23,8 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import lombok.extern.slf4j.Slf4j;
+import org.jboss.resteasy.reactive.RestPath;
+import org.jboss.resteasy.reactive.RestResponse;
 
 import java.util.List;
 import java.util.Objects;
@@ -37,15 +39,12 @@ public class CustomerApi {
   private ObjectMapper objectMapper;
 
   private final Vertx vertx;
-  private final PgPool client;
 
   @Inject
   public CustomerApi(
-      final Vertx vertx,
-      final PgPool client
+      final Vertx vertx
   ) {
     this.vertx = vertx;
-    this.client = client;
   }
 
   @PostConstruct
@@ -74,22 +73,22 @@ public class CustomerApi {
   }
 
   @GET
-  public Multi<Customer> getAll() {
-    return Customer.findAll(this.client);
+  public Uni<List<Customer>> getAll() {
+    return Customer.listAll(Sort.by("id"));
   }
 
   @GET
   @Path("/{id}")
   public Uni<Customer> getById(@PathParam("id") Long customerId) {
-    return Customer.findById(this.client, customerId);
+    return Customer.findById(customerId);
   }
 
   @GET
   @Path("/{id}/product")
   public Uni<Customer> getProductsById(@PathParam("id") Long customerId) {
-    return Uni.combine().all().unis(Customer.findById(this.client, customerId), this.getAllProductsRx())
+    return Uni.combine().all().unis(Customer.<Customer> findById(customerId), this.getAllProductsRx())
         .with((customer, fullProducts) -> {
-          customer.getProducts().forEach(product -> fullProducts.stream().filter(fullProduct -> product.getId().equals(fullProduct.getId())).findFirst()
+          customer.getProducts().forEach(product -> fullProducts.stream().filter(fullProduct -> product.getProduct().equals(fullProduct.getId())).findFirst()
               .ifPresent(productFound -> {
                 product.setName(productFound.getName());
                 product.setDescription(productFound.getDescription());
@@ -100,18 +99,34 @@ public class CustomerApi {
   }
 
   @POST
+  //@WithTransaction
   public Uni<Response> create(Customer customer) {
-    return customer.save(this.client).onItem().transform(id -> Response.status(Response.Status.CREATED).build());
+    return Panache.withTransaction(customer::persist).replaceWith(Response.status(Response.Status.CREATED)::build);
+    //return customer.persist().onItem().transform(id -> Response.status(Response.Status.CREATED).build());
   }
 
   @PUT
-  public Uni<Response> update(Customer customer) {
-    return customer.save(this.client).onItem().transform(id -> Response.noContent().build());
+  @Path("/{id}")
+  //@WithTransaction
+  public Uni<Response> update(@RestPath Long id, Customer customer) {
+    return Panache.withTransaction(
+        () -> Customer.<Customer> findById(id).onItem().invoke(entity -> {
+          entity.setNames(customer.getNames());
+          entity.setAccountNumber(customer.getAccountNumber());
+          entity.setCode(customer.getCode());
+        }))
+        .onItem().ifNotNull().transform(entity -> Response.noContent().build())
+        .onItem().ifNull().continueWith(Response.status(RestResponse.Status.NOT_FOUND).build());
+
+    //return customer.persist().onItem().transform(id -> Response.noContent().build());
   }
 
   @DELETE
   @Path("/{id}")
+  //@WithTransaction
   public Uni<Response> delete(@PathParam("id") Long customerId) {
-    return Customer.delete(this.client, customerId).onItem().transform(id -> Response.noContent().build());
+    return Panache.withTransaction(() -> Customer.deleteById(customerId)) // NOSONAR
+        .map(deleted -> Boolean.TRUE.equals(deleted) ? Response.noContent().build() : Response.status(RestResponse.Status.NOT_FOUND).build());
+    //return PanacheEntityBase.deleteById(customerId).onItem().transform(id -> Response.noContent().build());
   }
 }
